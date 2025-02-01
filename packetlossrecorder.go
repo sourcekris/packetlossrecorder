@@ -13,21 +13,24 @@ import (
 	ping "github.com/prometheus-community/pro-bing"
 )
 
+// pingHost is the internet available hostname to ask for ICMP echo reply from.
 const pingHost = "google.com"
 
+// Pinger contains the state of the pinger as well as references to the UI elements.
 type Pinger struct {
 	p               *ping.Pinger
 	a               *tview.Application
+	statsBox        *tview.TextView
+	logBox          *tview.TextView
+	packetLossBox   *tview.TextView
 	packetLossState bool
 	packetsLost     int
 	timeLastSuccess time.Time
-	statsBox        *tview.TextView
-	logBox          *tview.TextView
-	mutex           sync.Mutex
-	packetLossBox   *tview.TextView
 	lastLossTime    time.Time
+	mutex           sync.Mutex
 }
 
+// NewPinger creates a pinger and sets up the UI elements.
 func NewPinger(target string, statsBox, logBox, packetLossBox *tview.TextView) (*Pinger, error) {
 	pinger, err := ping.NewPinger(target)
 	if err != nil {
@@ -96,18 +99,18 @@ func (p *Pinger) CheckPacketLoss(app *tview.Application) {
 			p.packetLossState = true
 			p.lastLossTime = time.Now() // Store the loss time
 
-			// Append to packetLossBox instead of overwriting
-			currentLossText := p.packetLossBox.GetText(false) // Get current text
+			// Append to packetLossBox instead of overwriting, scroll afterwards.
+			currentLossText := p.packetLossBox.GetText(false)
 			newLossText := fmt.Sprintf("%s%s: [red]Packet Loss Detected![white]\n", currentLossText, time.Now().Format(time.RFC3339))
 			p.packetLossBox.SetText(newLossText)
-			p.packetLossBox.ScrollToEnd() // Scroll to bottom
+			p.packetLossBox.ScrollToEnd()
 		}
 		p.packetsLost++
 	} else if p.packetLossState { // Check for recovery
 		p.packetLossState = false
 		p.packetsLost = 0
 	}
-	app.Draw() // Redraw the UI
+	app.Draw()
 }
 
 func (p *Pinger) UpdateStatsDisplay(stats *ping.Statistics) {
@@ -150,8 +153,8 @@ func main() {
 	logBox := tview.NewTextView()
 	logBox.SetDynamicColors(true)
 	logBox.SetTextColor(tcell.ColorWhite)
-	logBox.SetScrollable(true) // Make the log box scrollable
-	logBox.SetBorder(true).SetTitle("Ping Log")
+	logBox.SetScrollable(true)
+	logBox.SetBorder(true).SetTitle(fmt.Sprintf("Ping Log for %s", pingHost))
 
 	pinger, err := NewPinger(pingHost, statsBox, logBox, packetLossBox)
 	if err != nil {
@@ -191,17 +194,19 @@ func main() {
 		}
 	}()
 
+	// Look and update packetloss details in a seperate goroutine.
 	go func() {
 		for {
 			pinger.CheckPacketLoss(app)
 		}
 	}()
 
-	go func() { // Run the pinger in a separate goroutine
+	// Runs the pinger in a separate goroutine
+	go func() {
 		err := pinger.Run()
 		if err != nil {
 			pinger.LogMessage(fmt.Sprintf("[red]Ping error: %v[white]\n", err))
-			app.Draw() // Update the UI to show the error
+			app.Draw()
 		}
 	}()
 
